@@ -192,10 +192,14 @@ function App() {
                 <span
                   className={cn(
                     "h-1.5 w-1.5 rounded-full",
-                    connected ? "bg-emerald-400" : "bg-amber-400",
+                    connected ? "bg-emerald-400" : "animate-pulse bg-amber-400",
                   )}
                 />
-                {connected ? t("connected") : t("disconnected")}
+                {connected
+                  ? t("connected")
+                  : status?.auto?.retrying
+                    ? t("reconnecting")
+                    : t("disconnected")}
               </Badge>
             )}
             <BatteryRing level={status?.battery} charging={status?.charging} />

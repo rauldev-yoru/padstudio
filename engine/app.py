@@ -15,6 +15,7 @@ import asyncio
 import contextlib
 import dataclasses
 import logging
+import time
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -36,6 +37,76 @@ app.add_middleware(
 
 _lock = asyncio.Lock()
 _state: dict[str, Any] = {"backend": None, "family": None}
+
+# Connection supervisor state. The pad sleeps, and when it does the BLE link
+# dies with no notification: without this, the engine sits on a dead handle
+# until a human presses Connect.
+_supervisor: asyncio.Task | None = None
+_auto: dict[str, Any] = {
+    "enabled": True,
+    "failures": 0,
+    "last_attempt": 0.0,
+    "last_error": "",
+    "last_connected": None,
+}
+
+
+async def _supervise() -> None:
+    """Keep the link alive: retry a sleeping pad, and notice a dead handle."""
+    while True:
+        await asyncio.sleep(3.0)
+        if not _auto["enabled"]:
+            continue
+        try:
+            backend = _backend()
+        except Exception as exc:  # backend construction failed, keep trying
+            _auto["last_error"] = f"{type(exc).__name__}: {exc}"
+            continue
+
+        if not backend.connected:
+            backoff = min(20.0, 2.0 + 2.0 * _auto["failures"])
+            if time.monotonic() - _auto["last_attempt"] < backoff:
+                continue
+            _auto["last_attempt"] = time.monotonic()
+            async with _lock:
+                if backend.connected:
+                    continue
+                try:
+                    await backend.connect(scan_timeout=6.0, attempts=1)
+                    _auto["failures"] = 0
+                    _auto["last_error"] = ""
+                    _auto["last_connected"] = time.time()
+                    log.info("auto-reconnect: attached to %s", getattr(backend, "address", "?"))
+                except Exception as exc:
+                    _auto["failures"] += 1
+                    _auto["last_error"] = f"{type(exc).__name__}: {exc}"
+                    log.info("auto-reconnect attempt %d failed: %s", _auto["failures"], exc)
+            continue
+
+        # Connected: prove the handle is still real.
+        try:
+            async with _lock:
+                await asyncio.wait_for(backend.ping(), timeout=10.0)
+        except Exception as exc:
+            _auto["last_error"] = f"link lost: {type(exc).__name__}: {exc}"
+            log.info("link lost, dropping the handle: %s", exc)
+            with contextlib.suppress(Exception):
+                await backend.disconnect()
+
+
+@app.on_event("startup")
+async def _start_supervisor() -> None:
+    global _supervisor
+    if _supervisor is None:
+        _supervisor = asyncio.create_task(_supervise())
+
+
+@app.on_event("shutdown")
+async def _stop_supervisor() -> None:
+    if _supervisor is not None:
+        _supervisor.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _supervisor
 
 
 def _backend():
@@ -141,6 +212,20 @@ async def disconnect() -> dict:
     async with _lock:
         await _backend().disconnect()
         return {"connected": False}
+
+
+@app.get("/auto")
+async def get_auto() -> dict:
+    return dict(_auto)
+
+
+@app.put("/auto")
+async def put_auto(body: dict) -> dict:
+    if "enabled" in body:
+        _auto["enabled"] = bool(body["enabled"])
+        _auto["failures"] = 0
+        _auto["last_attempt"] = 0.0
+    return dict(_auto)
 
 
 @app.get("/status")
@@ -262,6 +347,12 @@ async def events(ws: WebSocket) -> None:
                 payload = _dump(await _backend().status())
             except Exception as exc:  # keep the socket alive through BLE hiccups
                 payload = {"connected": False, "error": str(exc)}
+            payload["auto"] = {
+                "enabled": _auto["enabled"],
+                "failures": _auto["failures"],
+                "last_error": _auto["last_error"],
+                "retrying": bool(_auto["enabled"]) and not payload.get("connected"),
+            }
             await ws.send_json(payload)
             await asyncio.sleep(2.0)
     except WebSocketDisconnect:

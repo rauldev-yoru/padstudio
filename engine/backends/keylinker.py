@@ -69,23 +69,44 @@ class KeyLinkerBackend(Backend):
                 })
         return out
 
-    async def _resolve(self, address: str):
-        for _ in range(CONNECT_ATTEMPTS):
-            devices = await BleakScanner.discover(timeout=SCAN_TIMEOUT, return_adv=True)
+    async def _resolve(self, address: str, scan_timeout: float = SCAN_TIMEOUT,
+                       attempts: int = CONNECT_ATTEMPTS):
+        for attempt in range(max(1, attempts)):
+            devices = await BleakScanner.discover(timeout=scan_timeout, return_adv=True)
             for dev, _adv in devices.values():
                 if (dev.address or "").upper() == address.upper():
                     return dev
-            await asyncio.sleep(3.0)
+            if attempt + 1 < attempts:
+                await asyncio.sleep(1.5)
         return None
 
-    async def connect(self, address: str | None = None) -> None:
+    async def connect(self, address: str | None = None, *,
+                      scan_timeout: float = SCAN_TIMEOUT,
+                      attempts: int = CONNECT_ATTEMPTS) -> None:
+        """Attach to the pad.
+
+        The supervisor calls this with a short scan and one attempt, so a
+        sleeping pad fails fast and gets retried instead of blocking the lock
+        for a minute.
+        """
         target = (address or self.address).upper()
-        dev = await self._resolve(target)
+        dev = await self._resolve(target, scan_timeout, attempts)
         pad = X20(dev if dev is not None else target, unvalidated_reads=True)
         await pad.connect()
         pad._authorize = _allow
         self.pad = pad
         self.address = target
+
+    async def ping(self) -> bool:
+        """One real query on the wire; raises if the pad stopped answering.
+
+        `device_info()` caches, so a ping built on it would never touch the link
+        and would happily report a dead pad as alive. READ_NAME is a genuine
+        round trip and the cheapest one available.
+        """
+        pad = self._need()
+        await pad.name()
+        return True
 
     async def disconnect(self) -> None:
         if self.pad is not None:

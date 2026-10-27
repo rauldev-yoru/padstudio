@@ -25,6 +25,8 @@ export type Status = {
   capabilities?: Capabilities;
   transport?: string;
   error?: string;
+  /** Present on live websocket events: supervisor state. */
+  auto?: { enabled: boolean; failures: number; last_error: string; retrying: boolean };
 };
 
 export type Lighting = {

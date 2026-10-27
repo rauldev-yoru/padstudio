@@ -97,6 +97,11 @@ class Backend:
     async def status(self) -> Status:
         raise NotImplementedError
 
+    async def ping(self) -> bool:
+        """Cheap liveness check. Raises when the link is gone."""
+        await self.status()
+        return True
+
     async def set_lighting(self, r: int, g: int, b: int, brightness: int = 255) -> Lighting:
         raise NotSupported("lighting")
 
