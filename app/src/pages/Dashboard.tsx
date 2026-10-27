@@ -34,8 +34,9 @@ export default function Dashboard({
   const vibrate = async () => {
     setBusy(true);
     try {
-      const res = await api.vibration(60);
-      setNote(`vibration ${res.left}% / ${res.right}%`);
+      // Real haptics go through XInput; the BLE register only stores strength.
+      await api.rumble(1, 1, 450);
+      setNote("rumble fired · 450 ms");
     } catch (e) {
       setNote(String(e));
     } finally {

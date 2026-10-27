@@ -6,6 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
+import LiveInput from "@/components/LiveInput";
 
 type Kind = "sticks" | "triggers";
 
@@ -131,6 +132,8 @@ export default function Curves({ status }: { status: Status | null }) {
         </Button>
         {msg && <span className="truncate text-[11px] text-muted">{msg}</span>}
       </div>
+
+      <LiveInput active={!!status?.connected} />
 
       <div className="grid gap-5 lg:grid-cols-2">
         {current.map((curve, index) => (

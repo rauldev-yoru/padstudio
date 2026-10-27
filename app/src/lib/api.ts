@@ -48,6 +48,17 @@ export type Curve = {
   axis_max?: number;
 };
 
+export type InputState = {
+  connected: boolean;
+  slot?: number;
+  packet?: number;
+  /** Sticks normalised to -1..1, triggers to 0..1. */
+  left?: { x: number; y: number };
+  right?: { x: number; y: number };
+  triggers?: { left: number; right: number };
+  buttons?: string[];
+};
+
 export type Macro = {
   slot: number;
   steps: { keys: string[] | string; hold_ms: number }[];
@@ -110,6 +121,13 @@ export const api = {
       body: JSON.stringify({ percent }),
     }),
 
+  input: (slot = 0) => call<InputState>(`/input?slot=${slot}`),
+  rumble: (left = 1, right = 1, ms = 400, slot = 0) =>
+    call<{ fired: boolean }>("/rumble", {
+      method: "POST",
+      body: JSON.stringify({ left, right, ms, slot }),
+    }),
+
   backup: () => call<Record<string, unknown>>("/backup"),
   restore: (data: Record<string, unknown>) =>
     call<{ restored: boolean }>("/restore", { method: "POST", body: JSON.stringify(data) }),
@@ -126,6 +144,37 @@ export function watchStatus(onStatus: (s: Status) => void, onDown?: () => void):
     ws.onmessage = (ev) => {
       try {
         onStatus(JSON.parse(ev.data) as Status);
+      } catch {
+        /* ignore malformed frame */
+      }
+    };
+    ws.onclose = () => {
+      onDown?.();
+      if (!closed) retry = window.setTimeout(open, 2000);
+    };
+    ws.onerror = () => ws?.close();
+  };
+
+  open();
+  return () => {
+    closed = true;
+    if (retry) window.clearTimeout(retry);
+    ws?.close();
+  };
+}
+
+/** Live XInput stream at ~30 Hz. Read-only: never touches the BLE link. */
+export function watchInput(onState: (s: InputState) => void, onDown?: () => void): () => void {
+  let ws: WebSocket | null = null;
+  let closed = false;
+  let retry: number | undefined;
+
+  const open = () => {
+    if (closed) return;
+    ws = new WebSocket(ENGINE.replace("http", "ws") + "/input/ws");
+    ws.onmessage = (ev) => {
+      try {
+        onState(JSON.parse(ev.data) as InputState);
       } catch {
         /* ignore malformed frame */
       }

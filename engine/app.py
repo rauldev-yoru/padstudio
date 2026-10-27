@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from . import backends
+from . import xinput
 from .backends import Curve, MacroStep, NotConnected, NotSupported
 
 log = logging.getLogger("padstudio")
@@ -182,6 +183,13 @@ class VibrationBody(BaseModel):
     percent: int
 
 
+class RumbleBody(BaseModel):
+    left: float = 1.0
+    right: float = 1.0
+    ms: int = 400
+    slot: int = 0
+
+
 # -- discovery / lifecycle ------------------------------------------------
 @app.get("/health")
 async def health() -> dict:
@@ -319,9 +327,50 @@ async def delete_macro(slot: int) -> dict:
 # -- extras ---------------------------------------------------------------
 @app.post("/vibration")
 async def post_vibration(body: VibrationBody) -> dict:
+    """The stored motor *strength* (a setting, not a rumble)."""
     async with _lock:
         left, right = await _backend().set_vibration(body.percent)
         return {"left": left, "right": right}
+
+
+# -- live input and haptics (XInput, not the BLE config link) -------------
+@app.get("/input")
+async def get_input(slot: int = 0) -> dict:
+    if not xinput.available():
+        raise HTTPException(501, "XInput is only available on Windows")
+    return xinput.read(slot)
+
+
+@app.get("/input/slots")
+async def get_input_slots() -> dict:
+    if not xinput.available():
+        raise HTTPException(501, "XInput is only available on Windows")
+    return {"slots": xinput.slots()}
+
+
+@app.post("/rumble")
+async def post_rumble(body: RumbleBody) -> dict:
+    """Real haptics: pulses both motors through XInput, then stops them."""
+    if not xinput.available():
+        raise HTTPException(501, "XInput is only available on Windows")
+    fired = await asyncio.to_thread(xinput.pulse, body.left, body.right, body.ms, body.slot)
+    if not fired:
+        raise HTTPException(409, f"no XInput controller in slot {body.slot}")
+    return {"fired": True, "ms": body.ms, "slot": body.slot}
+
+
+@app.websocket("/input/ws")
+async def input_stream(ws: WebSocket) -> None:
+    """Live sticks/triggers at ~30 Hz. Read-only, never touches the BLE link."""
+    await ws.accept()
+    slot = 0
+    try:
+        while True:
+            payload = xinput.read(slot) if xinput.available() else {"connected": False}
+            await ws.send_json(payload)
+            await asyncio.sleep(1 / 30)
+    except WebSocketDisconnect:
+        return
 
 
 @app.get("/backup")
