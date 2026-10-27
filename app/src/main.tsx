@@ -23,8 +23,8 @@ import Curves from "@/pages/Curves";
 import Dashboard from "@/pages/Dashboard";
 import Lights from "@/pages/Lights";
 import Macros from "@/pages/Macros";
-import Placeholder from "@/pages/Placeholder";
 import Remap from "@/pages/Remap";
+import SettingsPage from "@/pages/Settings";
 
 type PageKey = "dashboard" | "lights" | "curves" | "remap" | "macros" | "settings";
 
@@ -216,7 +216,7 @@ function App() {
           {page === "curves" && <Curves status={status} />}
           {page === "remap" && <Remap status={status} />}
           {page === "macros" && <Macros status={status} />}
-          {page === "settings" && <Placeholder page={page} />}
+          {page === "settings" && <SettingsPage status={status} />}
         </div>
       </main>
     </div>

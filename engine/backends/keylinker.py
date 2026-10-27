@@ -293,8 +293,19 @@ class KeyLinkerBackend(Backend):
         await self._need().clear_macro(slot)
 
     # -- vibration ---------------------------------------------------------
+    async def vibration(self) -> tuple[int, int]:
+        """The stored motor strength (a setting, not a rumble)."""
+        return await self._need().vibration()
+
     async def set_vibration(self, percent: int) -> tuple[int, int]:
         return await self._need().set_vibration(percent)
+
+    # -- power -------------------------------------------------------------
+    async def shutdown_timeout(self) -> int | None:
+        return await self._need().shutdown_timeout()
+
+    async def set_shutdown_timeout(self, minutes: int | None) -> int | None:
+        return await self._need().set_shutdown_timeout(minutes)
 
     # -- backup ------------------------------------------------------------
     async def backup(self) -> dict:

@@ -77,7 +77,7 @@ export default function Dashboard({
 
           <div className="nice-shadow relative mx-auto w-full max-w-[520px]">
             <img
-              src="/assets/controller-hero.png"
+              src="./assets/controller-hero.png"
               alt="controller"
               className="w-full select-none drop-shadow-[0_25px_45px_rgba(168,85,247,0.35)]"
               draggable={false}

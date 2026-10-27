@@ -183,6 +183,11 @@ class VibrationBody(BaseModel):
     percent: int
 
 
+class SettingsBody(BaseModel):
+    motor_strength: int | None = None
+    shutdown_minutes: int | None = None
+
+
 class RumbleBody(BaseModel):
     left: float = 1.0
     right: float = 1.0
@@ -331,6 +336,36 @@ async def post_vibration(body: VibrationBody) -> dict:
     async with _lock:
         left, right = await _backend().set_vibration(body.percent)
         return {"left": left, "right": right}
+
+
+@app.get("/settings")
+async def get_settings() -> dict:
+    """Everything the settings screen shows, in one round trip."""
+    backend = _backend()
+    out: dict[str, Any] = {"auto": dict(_auto)}
+    try:
+        left, _right = await backend.vibration()
+        out["motor_strength"] = left
+    except Exception as exc:
+        out["motor_strength"] = None
+        out["motor_error"] = str(exc)
+    try:
+        out["shutdown_minutes"] = await backend.shutdown_timeout()
+    except Exception as exc:
+        out["shutdown_minutes"] = None
+        out["shutdown_error"] = str(exc)
+    return out
+
+
+@app.put("/settings")
+async def put_settings(body: SettingsBody) -> dict:
+    backend = _backend()
+    async with _lock:
+        if body.motor_strength is not None:
+            await backend.set_vibration(body.motor_strength)
+        if body.shutdown_minutes is not None:
+            await backend.set_shutdown_timeout(body.shutdown_minutes)
+    return await get_settings()
 
 
 # -- live input and haptics (XInput, not the BLE config link) -------------
