@@ -14,6 +14,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+class ControllerError(RuntimeError):
+    """The controller did not answer, or the link is gone."""
+
+
 class NotSupported(RuntimeError):
     """The connected controller does not expose this feature."""
 

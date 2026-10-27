@@ -29,6 +29,7 @@ from ..vendor.x20ctl import protocol as p
 
 from .base import (
     Backend,
+    ControllerError,
     Curve,
     Lighting,
     Macro,
@@ -104,7 +105,14 @@ class KeyLinkerBackend(Backend):
         """
         target = (address or self.address or "").upper() or None
         dev = await self._resolve(target, scan_timeout, attempts)
-        pad = X20(dev if dev is not None else target, unvalidated_reads=True)
+        if dev is None:
+            # Fail with something actionable instead of letting a None device
+            # surface later as an AttributeError from deep inside the client.
+            raise ControllerError(
+                "controller not found: it may be asleep, out of range, or held by "
+                "another client (the vendor phone app keeps the link)"
+            )
+        pad = X20(dev, unvalidated_reads=True)
         await pad.connect()
         pad._authorize = _allow
         self.pad = pad

@@ -2,7 +2,9 @@ node_modules/
 dist/
 __pycache__/
 *.pyc
-engine.log
-engine.err
-app/dist/
 *.tsbuildinfo
+# build artifacts
+app/release/
+engine-dist/
+build/
+*.log

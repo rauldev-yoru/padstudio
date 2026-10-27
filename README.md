@@ -26,3 +26,24 @@ cd app && npm install && npm run dev      # http://localhost:5173
 
 See `CREDITS.md` for licensing: this project is GPL-3.0-or-later because it
 vendors the reverse-engineered KeyLinker client from X20CTL.
+
+## Packaging
+
+```bash
+# 1. freeze the sidecar (Windows, from the repo root)
+python -m PyInstaller --noconfirm --onefile --name padstudio-engine \
+  --distpath engine-dist --workpath build --specpath build \
+  --collect-submodules uvicorn --collect-submodules fastapi \
+  --collect-submodules winrt --collect-data engine --paths . engine/sidecar.py
+
+# 2. build the renderer and the installer
+cd app && npm run dist        # -> release/PadStudio Setup <version>.exe
+```
+
+`electron-builder` copies `engine-dist/padstudio-engine.exe` into
+`resources/engine/`, which is where `main.cjs` looks for it when packaged. The
+installer is unsigned: Windows SmartScreen will warn on first run until the
+build is signed.
+
+The tray menu has **Start with Windows (minimised)**, which registers the app as
+a login item with `--hidden` so it comes up in the tray, engine included.

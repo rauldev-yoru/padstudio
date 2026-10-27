@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from .base import (
     Backend,
+    ControllerError,
     Curve,
     Lighting,
     Macro,
@@ -40,6 +41,7 @@ def families() -> list[str]:
 
 __all__ = [
     "Backend",
+    "ControllerError",
     "Curve",
     "Lighting",
     "Macro",
