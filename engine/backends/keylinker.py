@@ -20,10 +20,11 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import os
 
 from bleak import BleakScanner
 
-from ..vendor.x20ctl.client import X20
+from ..vendor.x20ctl.client import X20, is_controller
 from ..vendor.x20ctl import protocol as p
 
 from .base import (
@@ -37,7 +38,6 @@ from .base import (
     Status,
 )
 
-DEFAULT_ADDRESS = "98:B6:ED:4E:FF:E9"
 SCAN_TIMEOUT = 8.0
 CONNECT_ATTEMPTS = 6
 
@@ -51,16 +51,24 @@ class KeyLinkerBackend(Backend):
     family = "keylinker"
 
     def __init__(self, address: str | None = None):
-        self.address = address or DEFAULT_ADDRESS
+        # No hard-coded address on purpose: the pad is discovered, and an
+        # address from the caller (env var, CLI, UI) always wins.
+        self.address = address or os.environ.get("PADSTUDIO_ADDRESS") or None
         self.pad: X20 | None = None
 
     # -- discovery / connection -------------------------------------------
     async def scan(self, timeout: float = SCAN_TIMEOUT) -> list[dict]:
+        """Every pad of this family currently advertising.
+
+        Discovery is delegated to the protocol library: it matches on the
+        advertised name, the vendor MAC ranges and the configuration service,
+        never on a USB id (these pads clone Microsoft's).
+        """
         devices = await BleakScanner.discover(timeout=timeout, return_adv=True)
         out = []
         for dev, adv in devices.values():
             name = dev.name or ""
-            if "G5" in name.upper() or (dev.address or "").upper().startswith("98:B6"):
+            if is_controller(name, dev.address, getattr(adv, "service_uuids", ())):
                 out.append({
                     "address": dev.address,
                     "name": name,
@@ -69,12 +77,17 @@ class KeyLinkerBackend(Backend):
                 })
         return out
 
-    async def _resolve(self, address: str, scan_timeout: float = SCAN_TIMEOUT,
+    async def _resolve(self, address: str | None, scan_timeout: float = SCAN_TIMEOUT,
                        attempts: int = CONNECT_ATTEMPTS):
+        """Find the pad by address, or the first one of this family if none given."""
         for attempt in range(max(1, attempts)):
             devices = await BleakScanner.discover(timeout=scan_timeout, return_adv=True)
-            for dev, _adv in devices.values():
-                if (dev.address or "").upper() == address.upper():
+            for dev, adv in devices.values():
+                if address:
+                    if (dev.address or "").upper() == address.upper():
+                        return dev
+                elif is_controller(dev.name or "", dev.address,
+                                   getattr(adv, "service_uuids", ())):
                     return dev
             if attempt + 1 < attempts:
                 await asyncio.sleep(1.5)
@@ -89,13 +102,13 @@ class KeyLinkerBackend(Backend):
         sleeping pad fails fast and gets retried instead of blocking the lock
         for a minute.
         """
-        target = (address or self.address).upper()
+        target = (address or self.address or "").upper() or None
         dev = await self._resolve(target, scan_timeout, attempts)
         pad = X20(dev if dev is not None else target, unvalidated_reads=True)
         await pad.connect()
         pad._authorize = _allow
         self.pad = pad
-        self.address = target
+        self.address = target or getattr(dev, "address", None)
 
     async def ping(self) -> bool:
         """One real query on the wire; raises if the pad stopped answering.
